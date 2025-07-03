@@ -48,7 +48,9 @@ void format_disk() {
     fs.inode_table[0].owner_id = 0; // root用户
     strcpy(fs.inode_table[0].permission, "rwx");
     fs.inode_table[0].size = 0;
-    fs.inode_table[0].data_block_index = 0;
+    fs.inode_table[0].data_blocks[0] = 0;
+    fs.inode_table[0].block_count = 1;
+
     fs.inode_table[0].created = time(NULL);
     fs.inode_table[0].modified = time(NULL);
     fs.inode_table[0].accessed = time(NULL);
@@ -314,7 +316,9 @@ int create_file(char* filename, bool is_directory) {
     fs.inode_table[inode_id].owner_id = fs.current_user;
     strcpy(fs.inode_table[inode_id].permission, "rwx");
     fs.inode_table[inode_id].size = 0;
-    fs.inode_table[inode_id].data_block_index = block_id;
+    fs.inode_table[inode_id].data_blocks[0] = block_id;
+    fs.inode_table[inode_id].block_count = 1;
+
     fs.inode_table[inode_id].created = time(NULL);
     fs.inode_table[inode_id].modified = time(NULL);
     fs.inode_table[inode_id].accessed = time(NULL);
@@ -330,6 +334,25 @@ int create_file(char* filename, bool is_directory) {
     printf("%s创建成功！\n", is_directory ? "目录" : "文件");
     return inode_id;
 }
+
+void delete_directory_recursive(int inode_id) {
+    for (int i = 0; i < MAX_INODES; i++) {
+        if ((fs.inode_bitmap[i/8] & (1 << (i%8))) &&
+            fs.inode_table[i].parent_inode == inode_id) {
+            if (fs.inode_table[i].is_directory) {
+                delete_directory_recursive(i);
+            } else {
+                free_block(fs.inode_table[i].data_blocks[0]);
+                free_inode(i);
+            }
+        }
+    }
+    for (int j = 0; j < fs.inode_table[inode_id].block_count; j++) {
+        free_block(fs.inode_table[inode_id].data_blocks[j]);
+    }
+    free_inode(inode_id);
+}
+
 
 // 删除文件
 int delete_file(char* filename) {
@@ -352,14 +375,13 @@ int delete_file(char* filename) {
     
     // 检查是否为目录且非空
     if (fs.inode_table[inode_id].is_directory) {
-        for (int i = 0; i < MAX_INODES; i++) {
-            if ((fs.inode_bitmap[i/8] & (1 << (i%8))) && 
-                fs.inode_table[i].parent_inode == inode_id) {
-                printf("目录非空，无法删除！\n");
-                return -1;
-            }
-        }
+        printf("正在递归删除目录及其内容...\n");
+        delete_directory_recursive(inode_id);
+        save_filesystem();
+        printf("目录删除成功！\n");
+        return 0;
     }
+
     
     // 检查文件是否已打开
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
@@ -370,7 +392,10 @@ int delete_file(char* filename) {
     }
     
     // 释放资源
-    free_block(fs.inode_table[inode_id].data_block_index);
+    for (int j = 0; j < fs.inode_table[inode_id].block_count; j++) {
+        free_block(fs.inode_table[inode_id].data_blocks[j]);
+    }
+
     free_inode(inode_id);
     
     save_filesystem();
@@ -453,39 +478,43 @@ int read_file(int fd, char* buffer, int size) {
         printf("请先登录！\n");
         return -1;
     }
-    
+
     if (fd < 0 || fd >= MAX_OPEN_FILES || !fs.open_files[fd].is_open) {
         printf("无效的文件描述符！\n");
         return -1;
     }
-    
+
     int inode_id = fs.open_files[fd].inode_id;
-    
-    // 检查读权限
+    Inode* inode = &fs.inode_table[inode_id];
+
     if (!check_permission(inode_id, 'r')) {
         printf("权限不足，无法读取文件！\n");
         return -1;
     }
-    
-    // 计算实际可读取的字节数
-    int remaining = fs.inode_table[inode_id].size - fs.open_files[fd].position;
-    int bytes_to_read = (remaining < size) ? remaining : size;
-    
-    if (bytes_to_read <= 0) {
-        return 0; // 已到达文件末尾
+
+    int bytes_read = 0;
+    int remaining = size;
+    int pos = fs.open_files[fd].position;
+
+    while (remaining > 0 && pos < inode->size) {
+        int block_index = pos / BLOCK_SIZE;
+        int offset_in_block = pos % BLOCK_SIZE;
+
+        int to_read = BLOCK_SIZE - offset_in_block;
+        if (to_read > remaining) to_read = remaining;
+        if (to_read > inode->size - pos) to_read = inode->size - pos;
+
+        fseek(fs.disk, fs.super_block.data_blocks_offset + inode->data_blocks[block_index]*BLOCK_SIZE + offset_in_block, SEEK_SET);
+        fread(buffer + bytes_read, 1, to_read, fs.disk);
+
+        bytes_read += to_read;
+        pos += to_read;
+        remaining -= to_read;
     }
-    
-    // 读取数据
-    int block_id = fs.inode_table[inode_id].data_block_index;
-    fseek(fs.disk, fs.super_block.data_blocks_offset + block_id * BLOCK_SIZE + fs.open_files[fd].position, SEEK_SET);
-    int bytes_read = fread(buffer, 1, bytes_to_read, fs.disk);
-    
-    // 更新文件指针位置
-    fs.open_files[fd].position += bytes_read;
-    
-    // 更新访问时间
-    fs.inode_table[inode_id].accessed = time(NULL);
-    
+
+    fs.open_files[fd].position = pos;
+    inode->accessed = time(NULL);
+
     save_filesystem();
     return bytes_read;
 }
@@ -496,42 +525,60 @@ int write_file(int fd, char* buffer, int size) {
         printf("请先登录！\n");
         return -1;
     }
-    
+
     if (fd < 0 || fd >= MAX_OPEN_FILES || !fs.open_files[fd].is_open) {
         printf("无效的文件描述符！\n");
         return -1;
     }
-    
+
     int inode_id = fs.open_files[fd].inode_id;
-    
+
     // 检查写权限
     if (!check_permission(inode_id, 'w')) {
         printf("权限不足，无法写入文件！\n");
         return -1;
     }
-    
-    // 检查是否超出块大小限制
-    if (fs.open_files[fd].position + size > BLOCK_SIZE) {
-        printf("写入数据过大，超出单块限制！\n");
-        return -1;
+
+    Inode* inode = &fs.inode_table[inode_id];
+
+    int bytes_written = 0;
+    int remaining = size;
+
+    // 写入数据块
+    while (remaining > 0) {
+        int current_block = inode->block_count - 1;
+        if (current_block >= 8) {
+            printf("文件已达到最大块数，无法写入更多数据！\n");
+            break;
+        }
+
+        int offset_in_block = inode->size % BLOCK_SIZE;
+        int free_space = BLOCK_SIZE - offset_in_block;
+        int to_write = (remaining < free_space) ? remaining : free_space;
+
+        // 定位写入位置
+        fseek(fs.disk, fs.super_block.data_blocks_offset + inode->data_blocks[current_block]*BLOCK_SIZE + offset_in_block, SEEK_SET);
+        fwrite(buffer + bytes_written, 1, to_write, fs.disk);
+
+        inode->size += to_write;
+        bytes_written += to_write;
+        remaining -= to_write;
+
+        // 如果本块写满了并且还有数据，分配新块
+        if (offset_in_block + to_write == BLOCK_SIZE && remaining > 0) {
+            int new_block = allocate_block();
+            if (new_block == -1) {
+                printf("磁盘空间不足，写入中断！\n");
+                break;
+            }
+            inode->data_blocks[inode->block_count++] = new_block;
+        }
     }
-    
-    // 写入数据
-    int block_id = fs.inode_table[inode_id].data_block_index;
-    fseek(fs.disk, fs.super_block.data_blocks_offset + block_id * BLOCK_SIZE + fs.open_files[fd].position, SEEK_SET);
-    int bytes_written = fwrite(buffer, 1, size, fs.disk);
-    
-    // 更新文件指针位置
-    fs.open_files[fd].position += bytes_written;
-    
-    // 更新文件大小（如果需要）
-    if (fs.open_files[fd].position > fs.inode_table[inode_id].size) {
-        fs.inode_table[inode_id].size = fs.open_files[fd].position;
-    }
-    
-    // 更新修改时间
-    fs.inode_table[inode_id].modified = time(NULL);
-    
+
+    inode->modified = time(NULL);
+    fs.open_files[fd].position = inode->size;
+
+    fflush(fs.disk);
     save_filesystem();
     return bytes_written;
 }
@@ -587,6 +634,67 @@ void exit_system() {
     }
     printf("文件系统已安全退出。\n");
 }
+
+// 移动/重命名文件
+int move_file(char* oldname, char* newname) {
+    if (fs.current_user == -1) {
+        printf("请先登录！\n");
+        return -1;
+    }
+
+    if (strlen(newname) >= MAX_FILENAME) {
+        printf("新名称过长！\n");
+        return -1;
+    }
+
+    int inode_id = find_file(oldname);
+    if (inode_id == -1) {
+        printf("文件不存在！\n");
+        return -1;
+    }
+
+    if (!check_permission(inode_id, 'w')) {
+        printf("权限不足，无法移动文件！\n");
+        return -1;
+    }
+
+    if (find_file(newname) != -1) {
+        printf("目标名称已存在！\n");
+        return -1;
+    }
+
+    strcpy(fs.inode_table[inode_id].filename, newname);
+    fs.inode_table[inode_id].modified = time(NULL);
+
+    save_filesystem();
+    printf("文件已重命名(移动)为：%s\n", newname);
+    return 0;
+}
+
+// 修改密码
+int change_password(char* oldpass, char* newpass) {
+    if (fs.current_user == -1) {
+        printf("请先登录！\n");
+        return -1;
+    }
+
+    if (strlen(newpass) >= MAX_PASSWORD) {
+        printf("新密码过长！\n");
+        return -1;
+    }
+
+    int uid = fs.current_user;
+    if (strcmp(fs.users[uid].password, oldpass) != 0) {
+        printf("旧密码错误！\n");
+        return -1;
+    }
+
+    strcpy(fs.users[uid].password, newpass);
+    save_filesystem();
+    printf("密码修改成功！\n");
+    return 0;
+}
+
 
 // 切换目录
 int change_directory(char* dirname) {
@@ -798,7 +906,12 @@ void show_file_info(char* filename) {
     printf("修改时间: %s\n", modified_time);
     printf("访问时间: %s\n", accessed_time);
     printf("Inode ID: %d\n", inode_id);
-    printf("数据块ID: %d\n", fs.inode_table[inode_id].data_block_index);
+    printf("数据块ID: ");
+    for (int j = 0; j < fs.inode_table[inode_id].block_count; j++) {
+        printf("%d ", fs.inode_table[inode_id].data_blocks[j]);
+    }
+    printf("\n");
+
 }
 
 // 追加写入文件内容
@@ -857,7 +970,8 @@ int append_file(char* filename, char* content) {
     }
     
     // 写入数据
-    int block_id = fs.inode_table[inode_id].data_block_index;
+    int block_id = fs.inode_table[inode_id].data_blocks[fs.inode_table[inode_id].block_count - 1];
+
     fseek(fs.disk, fs.super_block.data_blocks_offset + block_id * BLOCK_SIZE + fs.open_files[fd].position, SEEK_SET);
     int bytes_written = fwrite(content, 1, content_len, fs.disk);
     
@@ -904,7 +1018,8 @@ int check_filesystem() {
     // 检查数据块位图与实际数据块使用情况是否一致
     for (int i = 0; i < MAX_INODES; i++) {
         if ((fs.inode_bitmap[i/8] & (1 << (i%8)))) {
-            int block_id = fs.inode_table[i].data_block_index;
+            int block_id = fs.inode_table[i].data_blocks[0]; // 这里只检查第一个块
+
             
             // 检查数据块是否在有效范围内
             if (block_id < 0 || block_id >= MAX_BLOCKS) {
@@ -912,7 +1027,9 @@ int check_filesystem() {
                 // 分配一个新的数据块
                 int new_block = allocate_block();
                 if (new_block != -1) {
-                    fs.inode_table[i].data_block_index = new_block;
+                    fs.inode_table[i].data_blocks[0] = new_block;
+                    fs.inode_table[i].block_count = 1;
+
                     printf("修复：为inode %d 分配了新的数据块 %d\n", i, new_block);
                 }
                 errors++;

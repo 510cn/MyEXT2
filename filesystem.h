@@ -34,15 +34,17 @@ typedef struct {
 typedef struct {
     char filename[MAX_FILENAME];
     int owner_id;
-    char permission[4]; // rwx\0
+    char permission[4];
     int size;
-    int data_block_index;
+    int data_blocks[8];    // 支持最多8个块
+    int block_count;       // 已分配块数
     time_t created;
     time_t modified;
     time_t accessed;
     bool is_directory;
     int parent_inode;
 } Inode;
+
 
 // 用户结构
 typedef struct {
@@ -73,6 +75,9 @@ typedef struct {
 } FileSystem;
 
 // 函数声明
+int move_file(char* oldname, char* newname);
+int change_password(char* oldpass, char* newpass);
+
 void init_filesystem();
 void load_filesystem();
 void save_filesystem();

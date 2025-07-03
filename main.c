@@ -109,6 +109,20 @@ int main() {
                 change_directory(args[0]);
             }
         }
+        else if (strcmp(command, "mv") == 0) {
+            if (arg_count < 2) {
+                printf("用法: mv <oldname> <newname>\n");
+            } else {
+                move_file(args[0], args[1]);
+            }
+        }
+        else if (strcmp(command, "passwd") == 0) {
+            if (arg_count < 2) {
+                printf("用法: passwd <oldpass> <newpass>\n");
+            } else {
+                change_password(args[0], args[1]);
+            }
+        }
         else if (strcmp(command, "create") == 0) {
             if (arg_count < 1) {
                 printf("用法: create <filename>\n");
