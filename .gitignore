@@ -1,0 +1,94 @@
+# ================================
+# Linux 二级文件系统模拟器 .gitignore
+# ================================
+
+# 编译产物
+# --------
+filesystem          # 主可执行文件
+*.o                  # 目标文件
+*.a                  # 静态库
+*.so                 # 动态库
+*.dylib              # macOS 动态库
+*.dll                # Windows 动态库
+*.exe                # Windows 可执行文件
+
+# 调试文件
+# --------
+*.dSYM/              # macOS 调试符号
+*.pdb                # Windows 调试数据库
+core                 # 核心转储文件
+vgcore.*             # Valgrind 核心转储
+
+# 运行时生成的文件
+# ----------------
+disk.img             # 磁盘映像文件（运行时创建）
+*.img                # 其他镜像文件
+*.log                # 日志文件
+*.tmp                # 临时文件
+
+# 系统文件
+# --------
+.DS_Store            # macOS 文件夹属性
+.DS_Store?           # macOS 文件夹属性变体
+._*                  # macOS 资源分支文件
+.Spotlight-V100      # macOS Spotlight 索引
+.Trashes             # macOS 回收站
+ehthumbs.db          # Windows 缩略图缓存
+Thumbs.db            # Windows 缩略图缓存
+desktop.ini          # Windows 文件夹配置
+
+# IDE 和编辑器文件
+# ----------------
+.vscode/             # VS Code 配置（个人设置）
+.idea/               # IntelliJ IDEA
+*.swp                # Vim 交换文件
+*.swo                # Vim 交换文件
+*~                   # 备份文件
+.#*                  # Emacs 锁定文件
+\#*\#                # Emacs 自动保存文件
+
+# 编译器和构建工具
+# ----------------
+*.d                  # 依赖文件
+.deps/               # 依赖目录
+.libs/               # 库目录
+Makefile.in          # 自动生成的 Makefile
+configure            # 自动生成的配置脚本
+config.log           # 配置日志
+config.status        # 配置状态
+autom4te.cache/      # autotools 缓存
+
+# 测试和覆盖率文件
+# ----------------
+*.gcov               # 覆盖率文件
+*.gcda               # GCC 覆盖率数据
+*.gcno               # GCC 覆盖率注释
+coverage/            # 覆盖率报告目录
+test_results/        # 测试结果目录
+
+# 文档生成文件
+# ------------
+*.aux                # LaTeX 辅助文件
+*.fdb_latexmk        # LaTeX 构建文件
+*.fls                # LaTeX 构建文件
+*.synctex.gz         # LaTeX 同步文件
+
+# 压缩文件（通常不需要版本控制）
+# --------------------------------
+*.zip                # ZIP 压缩文件
+*.tar.gz             # Gzip 压缩的 tar 文件
+*.tgz                # Gzip 压缩的 tar 文件
+*.rar                # RAR 压缩文件
+*.7z                 # 7-Zip 压缩文件
+
+# 个人配置文件
+# ------------
+.env                 # 环境变量文件
+.env.local           # 本地环境变量
+config.local         # 本地配置文件
+
+# 备份文件
+# --------
+*.bak                # 备份文件
+*.backup             # 备份文件
+*.orig               # 原始文件备份

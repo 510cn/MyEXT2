@@ -2,6 +2,11 @@
 
 FileSystem fs;
 
+// 函数声明
+bool match_pattern(const char* filename, const char* pattern);
+void get_file_path(int inode_id, char* path, int max_len);
+void search_directory(int dir_inode, char* pattern, int* found);
+
 // 初始化文件系统
 void init_filesystem() {
     FILE* disk = fopen(DISK_NAME, "rb");
@@ -884,7 +889,7 @@ void show_file_info(char* filename) {
         return;
     }
     
-    char type = fs.inode_table[inode_id].is_directory ? '目录' : '文件';
+    char type = fs.inode_table[inode_id].is_directory ? 'd' : 'f';
     char owner[MAX_USERNAME];
     strcpy(owner, fs.users[fs.inode_table[inode_id].owner_id].username);
     
@@ -1109,102 +1114,8 @@ void search_file(char* pattern) {
     
     int found = 0;
     
-    // 简单的通配符匹配函数
-    bool match_pattern(const char* filename, const char* pattern) {
-        // 如果模式中没有通配符，直接比较字符串
-        if (strchr(pattern, '*') == NULL) {
-            return strcmp(filename, pattern) == 0;
-        }
-        
-        const char* star = strchr(pattern, '*');
-        size_t prefix_len = star - pattern;
-        
-        // 检查前缀是否匹配
-        if (strncmp(filename, pattern, prefix_len) != 0) {
-            return false;
-        }
-        
-        // 如果 * 是最后一个字符，则任何前缀匹配的都符合
-        if (*(star + 1) == '\0') {
-            return true;
-        }
-        
-        // 否则，检查后缀是否匹配
-        size_t filename_len = strlen(filename);
-        size_t suffix_len = strlen(pattern) - prefix_len - 1;
-        
-        if (filename_len < prefix_len + suffix_len) {
-            return false;
-        }
-        
-        return strcmp(filename + filename_len - suffix_len, star + 1) == 0;
-    }
-    
-    // 获取文件的完整路径
-    void get_file_path(int inode_id, char* path, int max_len) {
-        if (inode_id == 0) {
-            strcpy(path, "/");
-            return;
-        }
-        
-        char temp_path[MAX_FILENAME * 10] = {0}; // 足够大的缓冲区
-        int current = inode_id;
-        
-        // 从当前节点向上遍历到根
-        while (current != 0) {
-            char name_buf[MAX_FILENAME + 1] = {0};
-            strcpy(name_buf, fs.inode_table[current].filename);
-            
-            // 将当前文件名添加到路径前面
-            memmove(temp_path + strlen(name_buf) + 1, temp_path, strlen(temp_path) + 1);
-            temp_path[0] = '/';
-            memcpy(temp_path + 1, name_buf, strlen(name_buf));
-            
-            current = fs.inode_table[current].parent_inode;
-        }
-        
-        // 如果路径为空，设置为根目录
-        if (strlen(temp_path) == 0) {
-            strcpy(temp_path, "/");
-        }
-        
-        strncpy(path, temp_path, max_len - 1);
-        path[max_len - 1] = '\0';
-    }
-    
-    // 递归搜索目录
-    void search_directory(int dir_inode, char* pattern) {
-        for (int i = 0; i < MAX_INODES; i++) {
-            if ((fs.inode_bitmap[i/8] & (1 << (i%8))) && 
-                fs.inode_table[i].parent_inode == dir_inode) {
-                
-                // 检查文件名是否匹配模式
-                if (match_pattern(fs.inode_table[i].filename, pattern)) {
-                    char path[MAX_FILENAME * 10] = {0};
-                    get_file_path(i, path, sizeof(path));
-                    
-                    char type = fs.inode_table[i].is_directory ? 'd' : 'f';
-                    char owner[MAX_USERNAME];
-                    strcpy(owner, fs.users[fs.inode_table[i].owner_id].username);
-                    
-                    printf("%-16s\t%c\t%-8s\t%s\n", 
-                           fs.inode_table[i].filename, 
-                           type,
-                           owner,
-                           path);
-                    found++;
-                }
-                
-                // 如果是目录，递归搜索
-                if (fs.inode_table[i].is_directory) {
-                    search_directory(i, pattern);
-                }
-            }
-        }
-    }
-    
     // 从根目录开始搜索
-    search_directory(0, pattern);
+    search_directory(0, pattern, &found);
     
     if (found == 0) {
         printf("未找到匹配的文件或目录。\n");
@@ -1334,5 +1245,99 @@ void disk_usage() {
                user_files, 
                user_dirs, 
                user_size);
+    }
+}
+
+// 简单的通配符匹配函数
+bool match_pattern(const char* filename, const char* pattern) {
+    // 如果模式中没有通配符，直接比较字符串
+    if (strchr(pattern, '*') == NULL) {
+        return strcmp(filename, pattern) == 0;
+    }
+
+    const char* star = strchr(pattern, '*');
+    size_t prefix_len = star - pattern;
+
+    // 检查前缀是否匹配
+    if (strncmp(filename, pattern, prefix_len) != 0) {
+        return false;
+    }
+
+    // 如果 * 是最后一个字符，则任何前缀匹配的都符合
+    if (*(star + 1) == '\0') {
+        return true;
+    }
+
+    // 否则，检查后缀是否匹配
+    size_t filename_len = strlen(filename);
+    size_t suffix_len = strlen(pattern) - prefix_len - 1;
+
+    if (filename_len < prefix_len + suffix_len) {
+        return false;
+    }
+
+    return strcmp(filename + filename_len - suffix_len, star + 1) == 0;
+}
+
+// 获取文件的完整路径
+void get_file_path(int inode_id, char* path, int max_len) {
+    if (inode_id == 0) {
+        strcpy(path, "/");
+        return;
+    }
+
+    char temp_path[MAX_FILENAME * 10] = {0}; // 足够大的缓冲区
+    int current = inode_id;
+
+    // 从当前节点向上遍历到根
+    while (current != 0) {
+        char name_buf[MAX_FILENAME + 1] = {0};
+        strcpy(name_buf, fs.inode_table[current].filename);
+
+        // 将当前文件名添加到路径前面
+        memmove(temp_path + strlen(name_buf) + 1, temp_path, strlen(temp_path) + 1);
+        temp_path[0] = '/';
+        memcpy(temp_path + 1, name_buf, strlen(name_buf));
+
+        current = fs.inode_table[current].parent_inode;
+    }
+
+    // 如果路径为空，设置为根目录
+    if (strlen(temp_path) == 0) {
+        strcpy(temp_path, "/");
+    }
+
+    strncpy(path, temp_path, max_len - 1);
+    path[max_len - 1] = '\0';
+}
+
+// 递归搜索目录
+void search_directory(int dir_inode, char* pattern, int* found) {
+    for (int i = 0; i < MAX_INODES; i++) {
+        if ((fs.inode_bitmap[i/8] & (1 << (i%8))) &&
+            fs.inode_table[i].parent_inode == dir_inode) {
+
+            // 检查文件名是否匹配模式
+            if (match_pattern(fs.inode_table[i].filename, pattern)) {
+                char path[MAX_FILENAME * 10] = {0};
+                get_file_path(i, path, sizeof(path));
+
+                char type = fs.inode_table[i].is_directory ? 'd' : 'f';
+                char owner[MAX_USERNAME];
+                strcpy(owner, fs.users[fs.inode_table[i].owner_id].username);
+
+                printf("%-16s\t%c\t%-8s\t%s\n",
+                       fs.inode_table[i].filename,
+                       type,
+                       owner,
+                       path);
+                (*found)++;
+            }
+
+            // 如果是目录，递归搜索
+            if (fs.inode_table[i].is_directory) {
+                search_directory(i, pattern, found);
+            }
+        }
     }
 }
