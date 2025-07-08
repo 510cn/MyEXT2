@@ -1,0 +1,10 @@
+# Test gitignore
+disk.img
+ext2fs
+*.o
+obj/
+verify_ext2fs.sh
+cleanup_git.sh
+test_gitignore.sh
+*.log
+*.tmp
