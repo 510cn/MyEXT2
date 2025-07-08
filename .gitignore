@@ -1,16 +1,18 @@
 # ================================
-# Linux 二级文件系统模拟器 .gitignore
+# 模块化EXT2文件系统 .gitignore
 # ================================
 
 # 编译产物
 # --------
-filesystem          # 主可执行文件
+ext2fs               # 主可执行文件
+filesystem           # 旧版本可执行文件名
 *.o                  # 目标文件
 *.a                  # 静态库
 *.so                 # 动态库
 *.dylib              # macOS 动态库
 *.dll                # Windows 动态库
 *.exe                # Windows 可执行文件
+obj/                 # 编译对象文件目录
 
 # 调试文件
 # --------
@@ -25,6 +27,14 @@ disk.img             # 磁盘映像文件（运行时创建）
 *.img                # 其他镜像文件
 *.log                # 日志文件
 *.tmp                # 临时文件
+ext2fs.log           # FUSE日志文件
+
+# 项目特定文件
+# ------------
+verify_ext2fs.sh     # 自动生成的验证脚本
+test_*.sh            # 测试脚本
+my_*.img             # 自定义磁盘镜像
+custom_disk.img      # 自定义磁盘文件
 
 # 系统文件
 # --------
@@ -65,6 +75,14 @@ autom4te.cache/      # autotools 缓存
 *.gcno               # GCC 覆盖率注释
 coverage/            # 覆盖率报告目录
 test_results/        # 测试结果目录
+
+# FUSE和文件系统特定
+# ------------------
+.fuse_hidden*        # FUSE隐藏文件
+lost+found/          # 文件系统恢复目录
+mount_point/         # 临时挂载点
+/tmp/myext2*/        # 测试挂载点
+/tmp/ext2_*/         # 测试挂载点
 
 # 文档生成文件
 # ------------
